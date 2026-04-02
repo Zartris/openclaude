@@ -194,11 +194,12 @@ export function resolveProviderRequest(options?: {
   baseUrl?: string
   fallbackModel?: string
 }): ResolvedProviderRequest {
+  const isGithubMode = isEnvTruthy(process.env.CLAUDE_CODE_USE_GITHUB)
   const requestedModel =
     options?.model?.trim() ||
     process.env.OPENAI_MODEL?.trim() ||
     options?.fallbackModel?.trim() ||
-    'gpt-4o'
+    (isGithubMode ? 'github:copilot' : 'gpt-4o')
   const descriptor = parseModelDescriptor(requestedModel)
   const rawBaseUrl =
     options?.baseUrl ??

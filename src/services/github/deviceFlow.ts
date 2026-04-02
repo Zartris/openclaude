@@ -11,7 +11,7 @@ export const GITHUB_DEVICE_ACCESS_TOKEN_URL =
   'https://github.com/login/oauth/access_token'
 
 /** Match runtime devsper github_oauth DEFAULT_SCOPE */
-export const DEFAULT_GITHUB_DEVICE_SCOPE = 'read:user'
+export const DEFAULT_GITHUB_DEVICE_SCOPE = 'read:user,models:read'
 
 export class GitHubDeviceFlowError extends Error {
   constructor(message: string) {

@@ -29,6 +29,11 @@ function mergeUserSettingsEnv(model: string): { ok: boolean; detail?: string } {
     env: {
       CLAUDE_CODE_USE_GITHUB: '1',
       OPENAI_MODEL: model,
+      CLAUDE_CODE_USE_OPENAI: undefined as any,
+      CLAUDE_CODE_USE_GEMINI: undefined as any,
+      CLAUDE_CODE_USE_BEDROCK: undefined as any,
+      CLAUDE_CODE_USE_VERTEX: undefined as any,
+      CLAUDE_CODE_USE_FOUNDRY: undefined as any,
     },
   })
   if (error) {
@@ -49,6 +54,7 @@ function OnboardGithub(props: {
     verification_uri: string
   } | null>(null)
   const [patDraft, setPatDraft] = useState('')
+  const [cursorOffset, setCursorOffset] = useState(0)
 
   const finalize = useCallback(
     async (token: string, model: string = DEFAULT_MODEL) => {
@@ -117,7 +123,7 @@ function OnboardGithub(props: {
         <Text color="red">{errorMsg}</Text>
         <Select
           options={options}
-          onChange={v => {
+          onChange={(v: string) => {
             if (v === 'back') {
               setStep('menu')
               setErrorMsg(null)
@@ -161,7 +167,7 @@ function OnboardGithub(props: {
           value={patDraft}
           mask="*"
           onChange={setPatDraft}
-          onSubmit={async value => {
+          onSubmit={async (value: string) => {
             const t = value.trim()
             if (!t) {
               return
@@ -172,6 +178,9 @@ function OnboardGithub(props: {
             setStep('menu')
             setPatDraft('')
           }}
+          columns={80}
+          cursorOffset={cursorOffset}
+          onChangeCursorOffset={setCursorOffset}
         />
       </Box>
     )
@@ -202,7 +211,7 @@ function OnboardGithub(props: {
       </Text>
       <Select
         options={menuOptions}
-        onChange={v => {
+        onChange={(v: string) => {
           if (v === 'cancel') {
             onDone('GitHub onboard cancelled', { display: 'system' })
             return

@@ -447,6 +447,13 @@ async function main(): Promise<void> {
   const options = parseOptions(process.argv.slice(2))
   const results: CheckResult[] = []
 
+  const { enableConfigs } = await import('../src/utils/config.js')
+  enableConfigs()
+  const { applySafeConfigEnvironmentVariables } = await import('../src/utils/managedEnv.js')
+  applySafeConfigEnvironmentVariables()
+  const { hydrateGithubModelsTokenFromSecureStorage } = await import('../src/utils/githubModelsCredentials.js')
+  hydrateGithubModelsTokenFromSecureStorage()
+
   results.push(checkNodeVersion())
   results.push(checkBunRuntime())
   results.push(checkBuildArtifacts())
