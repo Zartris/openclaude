@@ -1,6 +1,4 @@
 // @ts-nocheck
-import { writeFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 
 import {
   applyBenchmarkLatency,
@@ -16,6 +14,7 @@ import {
   buildOllamaProfileEnv,
   buildOpenAIProfileEnv,
   createProfileFile,
+  saveProfileFile,
   sanitizeApiKey,
   type ProfileFile,
   type ProviderProfile,
@@ -153,11 +152,7 @@ async function maybeApplyProfile(
 
   const profileFile = createProfileFile(profile, env)
 
-  writeFileSync(
-    resolve(process.cwd(), '.openclaude-profile.json'),
-    JSON.stringify(profileFile, null, 2),
-    'utf8',
-  )
+  saveProfileFile(profileFile)
   return true
 }
 

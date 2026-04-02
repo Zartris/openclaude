@@ -1,15 +1,24 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 
 import {
+  buildStartupEnvFromProfile,
+  buildAtomicChatProfileEnv,
   buildCodexProfileEnv,
   buildGeminiProfileEnv,
   buildLaunchEnv,
   buildOllamaProfileEnv,
   buildOpenAIProfileEnv,
+  createProfileFile,
+  maskSecretForDisplay,
+  loadProfileFile,
+  PROFILE_FILE_NAME,
+  redactSecretValueForDisplay,
+  saveProfileFile,
+  sanitizeProviderConfigValue,
   selectAutoProfile,
   type ProfileFile,
 } from './providerProfile.ts'
@@ -359,6 +368,112 @@ test('gemini profiles require a key', () => {
   assert.equal(env, null)
 })
 
+test('saveProfileFile writes a profile that loadProfileFile can read back', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'openclaude-profile-file-'))
+
+  try {
+    const persisted = createProfileFile('openai', {
+      OPENAI_API_KEY: 'sk-test',
+      OPENAI_MODEL: 'gpt-4o',
+    })
+
+    const filePath = saveProfileFile(persisted, { cwd })
+
+    assert.equal(filePath, join(cwd, PROFILE_FILE_NAME))
+    assert.equal(
+      JSON.parse(readFileSync(filePath, 'utf8')).profile,
+      'openai',
+    )
+    assert.deepEqual(loadProfileFile({ cwd }), persisted)
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
+test('buildStartupEnvFromProfile applies persisted gemini settings when no provider is explicitly selected', async () => {
+  const env = await buildStartupEnvFromProfile({
+    persisted: profile('gemini', {
+      GEMINI_API_KEY: 'gem-test',
+      GEMINI_MODEL: 'gemini-2.5-flash',
+    }),
+    processEnv: {},
+  })
+
+  assert.equal(env.CLAUDE_CODE_USE_GEMINI, '1')
+  assert.equal(env.CLAUDE_CODE_USE_OPENAI, undefined)
+  assert.equal(env.GEMINI_API_KEY, 'gem-test')
+  assert.equal(env.GEMINI_MODEL, 'gemini-2.5-flash')
+})
+
+test('buildStartupEnvFromProfile leaves explicit provider selections untouched', async () => {
+  const processEnv = {
+    CLAUDE_CODE_USE_GEMINI: '1',
+    GEMINI_API_KEY: 'gem-live',
+    GEMINI_MODEL: 'gemini-2.0-flash',
+  }
+
+  const env = await buildStartupEnvFromProfile({
+    persisted: profile('openai', {
+      OPENAI_API_KEY: 'sk-persisted',
+      OPENAI_MODEL: 'gpt-4o',
+    }),
+    processEnv,
+  })
+
+  assert.equal(env, processEnv)
+  assert.equal(env.CLAUDE_CODE_USE_GEMINI, '1')
+  assert.equal(env.OPENAI_API_KEY, undefined)
+})
+
+test('buildStartupEnvFromProfile treats explicit falsey provider flags as user intent', async () => {
+  const processEnv = {
+    CLAUDE_CODE_USE_OPENAI: '0',
+  }
+
+  const env = await buildStartupEnvFromProfile({
+    persisted: profile('gemini', {
+      GEMINI_API_KEY: 'gem-persisted',
+      GEMINI_MODEL: 'gemini-2.5-flash',
+    }),
+    processEnv,
+  })
+
+  assert.equal(env, processEnv)
+  assert.equal(env.CLAUDE_CODE_USE_OPENAI, '0')
+  assert.equal(env.GEMINI_API_KEY, undefined)
+})
+
+test('maskSecretForDisplay preserves only a short prefix and suffix', () => {
+  assert.equal(maskSecretForDisplay('sk-secret-12345678'), 'sk-...5678')
+  assert.equal(maskSecretForDisplay('AIzaSecret12345678'), 'AIza...5678')
+})
+
+test('redactSecretValueForDisplay masks poisoned display fields that equal configured secrets', () => {
+  const apiKey = 'sk-secret-12345678'
+
+  assert.equal(
+    redactSecretValueForDisplay(apiKey, { OPENAI_API_KEY: apiKey }),
+    'sk-...5678',
+  )
+  assert.equal(
+    redactSecretValueForDisplay('gpt-4o', { OPENAI_API_KEY: apiKey }),
+    'gpt-4o',
+  )
+})
+
+test('sanitizeProviderConfigValue drops secret-like poisoned values', () => {
+  const apiKey = 'sk-secret-12345678'
+
+  assert.equal(
+    sanitizeProviderConfigValue(apiKey, { OPENAI_API_KEY: apiKey }),
+    undefined,
+  )
+  assert.equal(
+    sanitizeProviderConfigValue('gpt-4o', { OPENAI_API_KEY: apiKey }),
+    'gpt-4o',
+  )
+})
+
 test('openai profiles ignore codex shell transport hints', () => {
   const env = buildOpenAIProfileEnv({
     goal: 'balanced',
@@ -377,7 +492,110 @@ test('openai profiles ignore codex shell transport hints', () => {
   })
 })
 
+test('openai profiles ignore poisoned shell model and base url values', () => {
+  const env = buildOpenAIProfileEnv({
+    goal: 'balanced',
+    apiKey: 'sk-live',
+    processEnv: {
+      OPENAI_BASE_URL: 'sk-live',
+      OPENAI_MODEL: 'sk-live',
+      OPENAI_API_KEY: 'sk-live',
+    },
+  })
+
+  assert.deepEqual(env, {
+    OPENAI_BASE_URL: 'https://api.openai.com/v1',
+    OPENAI_MODEL: 'gpt-4o',
+    OPENAI_API_KEY: 'sk-live',
+  })
+})
+
+test('startup env ignores poisoned persisted openai model and base url', async () => {
+  const env = await buildStartupEnvFromProfile({
+    persisted: profile('openai', {
+      OPENAI_API_KEY: 'sk-live',
+      OPENAI_MODEL: 'sk-live',
+      OPENAI_BASE_URL: 'sk-live',
+    }),
+    processEnv: {},
+  })
+
+  assert.equal(env.CLAUDE_CODE_USE_OPENAI, '1')
+  assert.equal(env.OPENAI_API_KEY, 'sk-live')
+  assert.equal(env.OPENAI_MODEL, 'gpt-4o')
+  assert.equal(env.OPENAI_BASE_URL, 'https://api.openai.com/v1')
+})
+
 test('auto profile falls back to openai when no viable ollama model exists', () => {
   assert.equal(selectAutoProfile(null), 'openai')
   assert.equal(selectAutoProfile('qwen2.5-coder:7b'), 'ollama')
+})
+
+// ── Atomic Chat profile tests ────────────────────────────────────────────────
+
+test('atomic-chat profiles never persist openai api keys', () => {
+  const env = buildAtomicChatProfileEnv('some-local-model', {
+    getAtomicChatChatBaseUrl: () => 'http://127.0.0.1:1337/v1',
+  })
+
+  assert.deepEqual(env, {
+    OPENAI_BASE_URL: 'http://127.0.0.1:1337/v1',
+    OPENAI_MODEL: 'some-local-model',
+  })
+  assert.equal('OPENAI_API_KEY' in env, false)
+})
+
+test('atomic-chat profiles respect custom base url', () => {
+  const env = buildAtomicChatProfileEnv('my-model', {
+    baseUrl: 'http://192.168.1.100:1337',
+    getAtomicChatChatBaseUrl: (baseUrl?: string) =>
+      baseUrl ? `${baseUrl}/v1` : 'http://127.0.0.1:1337/v1',
+  })
+
+  assert.equal(env.OPENAI_BASE_URL, 'http://192.168.1.100:1337/v1')
+  assert.equal(env.OPENAI_MODEL, 'my-model')
+})
+
+test('matching persisted atomic-chat env is reused for atomic-chat launch', async () => {
+  const env = await buildLaunchEnv({
+    profile: 'atomic-chat',
+    persisted: profile('atomic-chat', {
+      OPENAI_BASE_URL: 'http://127.0.0.1:1337/v1',
+      OPENAI_MODEL: 'llama-3.1-8b',
+    }),
+    goal: 'balanced',
+    processEnv: {},
+    getAtomicChatChatBaseUrl: () => 'http://127.0.0.1:1337/v1',
+    resolveAtomicChatDefaultModel: async () => 'other-model',
+  })
+
+  assert.equal(env.OPENAI_BASE_URL, 'http://127.0.0.1:1337/v1')
+  assert.equal(env.OPENAI_MODEL, 'llama-3.1-8b')
+  assert.equal(env.OPENAI_API_KEY, undefined)
+  assert.equal(env.CODEX_API_KEY, undefined)
+})
+
+test('atomic-chat launch ignores mismatched persisted openai env', async () => {
+  const env = await buildLaunchEnv({
+    profile: 'atomic-chat',
+    persisted: profile('openai', {
+      OPENAI_BASE_URL: 'https://api.openai.com/v1',
+      OPENAI_MODEL: 'gpt-4o',
+      OPENAI_API_KEY: 'sk-persisted',
+    }),
+    goal: 'balanced',
+    processEnv: {
+      OPENAI_API_KEY: 'sk-live',
+      CODEX_API_KEY: 'codex-live',
+      CHATGPT_ACCOUNT_ID: 'acct_live',
+    },
+    getAtomicChatChatBaseUrl: () => 'http://127.0.0.1:1337/v1',
+    resolveAtomicChatDefaultModel: async () => 'local-model',
+  })
+
+  assert.equal(env.OPENAI_BASE_URL, 'http://127.0.0.1:1337/v1')
+  assert.equal(env.OPENAI_MODEL, 'local-model')
+  assert.equal(env.OPENAI_API_KEY, undefined)
+  assert.equal(env.CODEX_API_KEY, undefined)
+  assert.equal(env.CHATGPT_ACCOUNT_ID, undefined)
 })

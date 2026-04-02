@@ -12,6 +12,7 @@ import { formatNumber } from './format.js';
 import { getIdeClientName, type IDEExtensionInstallationStatus, isJetBrainsIde, toIDEDisplayName } from './ide.js';
 import { getClaudeAiUserDefaultModelDescription, modelDisplayString } from './model/model.js';
 import { getAPIProvider } from './model/providers.js';
+import { resolveProviderRequest } from '../services/api/providerConfig.js';
 import { getMTLSConfig } from './mtls.js';
 import { checkInstall } from './nativeInstaller/index.js';
 import { getProxyUrl } from './proxy.js';
@@ -20,6 +21,7 @@ import { getSettingsWithAllErrors } from './settings/allErrors.js';
 import { getEnabledSettingSources, getSettingSourceDisplayNameCapitalized } from './settings/constants.js';
 import { getManagedFileSettingsPresence, getPolicySettingsOrigin, getSettingsForSource } from './settings/settings.js';
 import type { ThemeName } from './theme.js';
+import { redactSecretValueForDisplay } from './providerProfile.js';
 export type Property = {
   label?: string;
   value: React.ReactNode | Array<string>;
@@ -246,6 +248,7 @@ export function buildAPIProviderProperties(): Property[] {
       vertex: 'Google Vertex AI',
       foundry: 'Microsoft Foundry',
       openai: 'OpenAI-compatible',
+      codex: 'Codex',
       gemini: 'Google Gemini',
     }[apiProvider];
     properties.push({
@@ -327,14 +330,53 @@ export function buildAPIProviderProperties(): Property[] {
     if (openaiBaseUrl) {
       properties.push({
         label: 'OpenAI base URL',
-        value: openaiBaseUrl
+        value: redactSecretValueForDisplay(openaiBaseUrl, process.env) ?? openaiBaseUrl
       });
     }
     const openaiModel = process.env.OPENAI_MODEL;
     if (openaiModel) {
+      // Build display model string with resolved model + reasoning effort
+      let modelDisplay = openaiModel;
+      const resolved = resolveProviderRequest({ model: openaiModel });
+      const resolvedModel = resolved.resolvedModel;
+      const reasoningEffort = resolved.reasoning?.effort;
+      if (resolvedModel && resolvedModel !== openaiModel.toLowerCase()) {
+        // Show resolved model name
+        modelDisplay = resolvedModel;
+      }
+      if (reasoningEffort) {
+        modelDisplay = `${modelDisplay} (${reasoningEffort})`;
+      }
       properties.push({
         label: 'Model',
-        value: openaiModel
+        value: redactSecretValueForDisplay(modelDisplay, process.env) ?? modelDisplay
+      });
+    }
+  } else if (apiProvider === 'codex') {
+    const codexBaseUrl = process.env.OPENAI_BASE_URL;
+    if (codexBaseUrl) {
+      properties.push({
+        label: 'Codex base URL',
+        value: redactSecretValueForDisplay(codexBaseUrl, process.env) ?? codexBaseUrl
+      });
+    }
+    const openaiModel = process.env.OPENAI_MODEL;
+    if (openaiModel) {
+      // Build display model string with resolved model + reasoning effort
+      let modelDisplay = openaiModel;
+      const resolved = resolveProviderRequest({ model: openaiModel });
+      const resolvedModel = resolved.resolvedModel;
+      const reasoningEffort = resolved.reasoning?.effort;
+      if (resolvedModel && resolvedModel !== openaiModel.toLowerCase()) {
+        // Show resolved model name
+        modelDisplay = resolvedModel;
+      }
+      if (reasoningEffort) {
+        modelDisplay = `${modelDisplay} (${reasoningEffort})`;
+      }
+      properties.push({
+        label: 'Model',
+        value: redactSecretValueForDisplay(modelDisplay, process.env) ?? modelDisplay
       });
     }
   } else if (apiProvider === 'gemini') {
@@ -342,14 +384,14 @@ export function buildAPIProviderProperties(): Property[] {
     if (geminiBaseUrl) {
       properties.push({
         label: 'Gemini base URL',
-        value: geminiBaseUrl
+        value: redactSecretValueForDisplay(geminiBaseUrl, process.env) ?? geminiBaseUrl
       });
     }
     const geminiModel = process.env.GEMINI_MODEL;
     if (geminiModel) {
       properties.push({
         label: 'Model',
-        value: geminiModel
+        value: redactSecretValueForDisplay(geminiModel, process.env) ?? geminiModel
       });
     }
   }

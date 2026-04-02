@@ -1,6 +1,4 @@
 // @ts-nocheck
-import { writeFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import {
   resolveCodexApiCredentials,
 } from '../src/services/api/providerConfig.js'
@@ -10,18 +8,23 @@ import {
   recommendOllamaModel,
 } from '../src/utils/providerRecommendation.ts'
 import {
+  buildAtomicChatProfileEnv,
   buildCodexProfileEnv,
   buildGeminiProfileEnv,
   buildOllamaProfileEnv,
   buildOpenAIProfileEnv,
   createProfileFile,
+  saveProfileFile,
   selectAutoProfile,
   type ProfileFile,
   type ProviderProfile,
 } from '../src/utils/providerProfile.ts'
 import {
+  getAtomicChatChatBaseUrl,
   getOllamaChatBaseUrl,
+  hasLocalAtomicChat,
   hasLocalOllama,
+  listAtomicChatModels,
   listOllamaModels,
 } from './provider-discovery.ts'
 
@@ -34,7 +37,7 @@ function parseArg(name: string): string | null {
 
 function parseProviderArg(): ProviderProfile | 'auto' {
   const p = parseArg('--provider')?.toLowerCase()
-  if (p === 'openai' || p === 'ollama' || p === 'codex' || p === 'gemini') return p
+  if (p === 'openai' || p === 'ollama' || p === 'codex' || p === 'gemini' || p === 'atomic-chat') return p
   return 'auto'
 }
 
@@ -102,6 +105,21 @@ async function main(): Promise<void> {
         getOllamaChatBaseUrl,
       },
     )
+  } else if (selected === 'atomic-chat') {
+    const model = argModel || (await listAtomicChatModels(argBaseUrl || undefined))[0]
+    if (!model) {
+      if (!(await hasLocalAtomicChat(argBaseUrl || undefined))) {
+        console.error('Atomic Chat is not running (could not connect to 127.0.0.1:1337).\n  Download from https://atomic.chat/ and launch the application.')
+      } else {
+        console.error('Atomic Chat is running but no model is loaded. Open Atomic Chat and download or start a model first.')
+      }
+      process.exit(1)
+    }
+
+    env = buildAtomicChatProfileEnv(model, {
+      baseUrl: argBaseUrl,
+      getAtomicChatChatBaseUrl,
+    })
   } else if (selected === 'codex') {
     const builtEnv = buildCodexProfileEnv({
       model: argModel,
@@ -147,8 +165,7 @@ async function main(): Promise<void> {
 
   const profile = createProfileFile(selected, env)
 
-  const outputPath = resolve(process.cwd(), '.openclaude-profile.json')
-  writeFileSync(outputPath, JSON.stringify(profile, null, 2), { encoding: 'utf8', mode: 0o600 })
+  const outputPath = saveProfileFile(profile)
 
   console.log(`Saved profile: ${selected}`)
   console.log(`Goal: ${goal}`)

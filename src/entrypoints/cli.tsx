@@ -3,6 +3,11 @@ import {
   resolveCodexApiCredentials,
   resolveProviderRequest,
 } from '../services/api/providerConfig.js'
+import {
+  applyProfileEnvToProcessEnv,
+  buildStartupEnvFromProfile,
+  redactSecretValueForDisplay,
+} from '../utils/providerProfile.js'
 
 // Bugfix for corepack auto-pinning, which adds yarnpkg to peoples' package.jsons
 // eslint-disable-next-line custom-rules/no-top-level-side-effects
@@ -45,39 +50,72 @@ function isLocalProviderUrl(baseUrl: string | undefined): boolean {
   }
 }
 
-function validateProviderEnvOrExit(): void {
-  if (!isEnvTruthy(process.env.CLAUDE_CODE_USE_OPENAI)) {
-    return
+function getProviderValidationError(
+  env: NodeJS.ProcessEnv = process.env,
+): string | null {
+  const useOpenAI = isEnvTruthy(env.CLAUDE_CODE_USE_OPENAI)
+  const useGithub = isEnvTruthy(env.CLAUDE_CODE_USE_GITHUB)
+
+  if (isEnvTruthy(env.CLAUDE_CODE_USE_GEMINI)) {
+    if (!(env.GEMINI_API_KEY ?? env.GOOGLE_API_KEY)) {
+      return 'GEMINI_API_KEY is required when CLAUDE_CODE_USE_GEMINI=1.'
+    }
+    return null
+  }
+
+  if (useGithub && !useOpenAI) {
+    const token = (env.GITHUB_TOKEN?.trim() || env.GH_TOKEN?.trim()) ?? ''
+    if (!token) {
+      return 'GITHUB_TOKEN or GH_TOKEN is required when CLAUDE_CODE_USE_GITHUB=1.'
+    }
+    return null
+  }
+
+  if (!useOpenAI) {
+    return null
   }
 
   const request = resolveProviderRequest({
-    model: process.env.OPENAI_MODEL,
-    baseUrl: process.env.OPENAI_BASE_URL,
+    model: env.OPENAI_MODEL,
+    baseUrl: env.OPENAI_BASE_URL,
   })
 
-  if (process.env.OPENAI_API_KEY === 'SUA_CHAVE') {
-    console.error('Invalid OPENAI_API_KEY: placeholder value SUA_CHAVE detected. Set a real key or unset for local providers.')
-    process.exit(1)
+  if (env.OPENAI_API_KEY === 'SUA_CHAVE') {
+    return 'Invalid OPENAI_API_KEY: placeholder value SUA_CHAVE detected. Set a real key or unset for local providers.'
   }
 
   if (request.transport === 'codex_responses') {
-    const credentials = resolveCodexApiCredentials()
+    const credentials = resolveCodexApiCredentials(env)
     if (!credentials.apiKey) {
       const authHint = credentials.authPath
         ? ` or put auth.json at ${credentials.authPath}`
         : ''
-      console.error(`Codex auth is required for ${request.requestedModel}. Set CODEX_API_KEY${authHint}.`)
-      process.exit(1)
+      const safeModel =
+        redactSecretValueForDisplay(request.requestedModel, env) ??
+        'the requested model'
+      return `Codex auth is required for ${safeModel}. Set CODEX_API_KEY${authHint}.`
     }
     if (!credentials.accountId) {
-      console.error('Codex auth is missing chatgpt_account_id. Re-login with Codex or set CHATGPT_ACCOUNT_ID/CODEX_ACCOUNT_ID.')
-      process.exit(1)
+      return 'Codex auth is missing chatgpt_account_id. Re-login with Codex or set CHATGPT_ACCOUNT_ID/CODEX_ACCOUNT_ID.'
     }
-    return
+    return null
   }
 
-  if (!process.env.OPENAI_API_KEY && !isLocalProviderUrl(request.baseUrl)) {
-    console.error('OPENAI_API_KEY is required when CLAUDE_CODE_USE_OPENAI=1 and OPENAI_BASE_URL is not local.')
+  if (!env.OPENAI_API_KEY && !isLocalProviderUrl(request.baseUrl)) {
+    const hasGithubToken = !!(env.GITHUB_TOKEN?.trim() || env.GH_TOKEN?.trim())
+    if (useGithub && hasGithubToken) {
+      return null
+    }
+    return 'OPENAI_API_KEY is required when CLAUDE_CODE_USE_OPENAI=1 and OPENAI_BASE_URL is not local.'
+  }
+
+  return null
+}
+
+function validateProviderEnvOrExit(): void {
+  const error = getProviderValidationError()
+  if (error) {
+    console.error(error)
     process.exit(1)
   }
 }
@@ -96,6 +134,29 @@ async function main(): Promise<void> {
     // biome-ignore lint/suspicious/noConsole:: intentional console output
     console.log(`${MACRO.DISPLAY_VERSION ?? MACRO.VERSION} (Open Claude)`);
     return;
+  }
+
+  {
+    const { enableConfigs } = await import('../utils/config.js')
+    enableConfigs()
+    const { applySafeConfigEnvironmentVariables } = await import('../utils/managedEnv.js')
+    applySafeConfigEnvironmentVariables()
+    const { hydrateGithubModelsTokenFromSecureStorage } = await import('../utils/githubModelsCredentials.js')
+    hydrateGithubModelsTokenFromSecureStorage()
+  }
+
+  const startupEnv = await buildStartupEnvFromProfile({
+    processEnv: process.env,
+  })
+  if (startupEnv !== process.env) {
+    const startupProfileError = getProviderValidationError(startupEnv)
+    if (startupProfileError) {
+      console.error(
+        `Warning: ignoring saved provider profile. ${startupProfileError}`,
+      )
+    } else {
+      applyProfileEnvToProcessEnv(process.env, startupEnv)
+    }
   }
 
   validateProviderEnvOrExit()

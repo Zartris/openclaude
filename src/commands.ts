@@ -19,6 +19,7 @@ import cost from './commands/cost/index.js'
 import diff from './commands/diff/index.js'
 import ctx_viz from './commands/ctx_viz/index.js'
 import doctor from './commands/doctor/index.js'
+import onboardGithub from './commands/onboard-github/index.js'
 import memory from './commands/memory/index.js'
 import help from './commands/help/index.js'
 import ide from './commands/ide/index.js'
@@ -128,6 +129,7 @@ import plan from './commands/plan/index.js'
 import fast from './commands/fast/index.js'
 import passes from './commands/passes/index.js'
 import privacySettings from './commands/privacy-settings/index.js'
+import provider from './commands/provider/index.js'
 import hooks from './commands/hooks/index.js'
 import files from './commands/files/index.js'
 import branch from './commands/branch/index.js'
@@ -288,9 +290,11 @@ const COMMANDS = memoize((): Command[] => [
   memory,
   mobile,
   model,
+  onboardGithub,
   outputStyle,
   remoteEnv,
   plugin,
+  provider,
   pr_comments,
   releaseNotes,
   reloadPlugins,
