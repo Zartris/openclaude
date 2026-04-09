@@ -143,12 +143,52 @@ export async function getProviderValidationError(
   return null
 }
 
+/**
+ * Returns true when the user appears to be starting an interactive REPL session
+ * (i.e. `openclaude` with no arguments or only flag-style arguments that don't
+ * select a non-interactive sub-command).  In this mode we allow GitHub auth
+ * errors through as warnings so the user can run /onboard-github from inside
+ * the CLI rather than being locked out entirely.
+ */
+function isInteractiveReplMode(argv: string[] = process.argv.slice(2)): boolean {
+  if (argv.length === 0) return true
+  // Non-interactive sub-commands that should still hard-fail on missing auth
+  const nonInteractiveSubcommands = new Set([
+    'print', '-p', '--print',
+    'run',
+    'export',
+    'config',
+    'doctor',
+  ])
+  // If the first positional-looking argument is a known non-interactive
+  // sub-command, don't allow the bypass.
+  const firstArg = argv[0]
+  if (firstArg && !firstArg.startsWith('-') && nonInteractiveSubcommands.has(firstArg)) {
+    return false
+  }
+  return true
+}
+
 export async function validateProviderEnvOrExit(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<void> {
   const error = await getProviderValidationError(env)
-  if (error) {
-    console.error(error)
-    process.exit(1)
+  if (!error) return
+
+  // For GitHub auth errors in interactive REPL mode, warn instead of exiting
+  // so the user can run /onboard-github from within the CLI.
+  const isGithubAuthError =
+    isEnvTruthy(env.CLAUDE_CODE_USE_GITHUB) &&
+    !isEnvTruthy(env.CLAUDE_CODE_USE_OPENAI) &&
+    (error.includes('authentication required') ||
+      error.includes('token has expired') ||
+      error.includes('token is invalid'))
+
+  if (isGithubAuthError && isInteractiveReplMode()) {
+    console.error(`Warning: ${error}\n`)
+    return
   }
+
+  console.error(error)
+  process.exit(1)
 }
