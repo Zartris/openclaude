@@ -50,9 +50,9 @@ export function usesAnthropicAccountFlow(): boolean {
  * Returns true when the GitHub provider should use Anthropic's native API
  * format instead of the OpenAI-compatible shim.
  *
- * Enabled automatically when CLAUDE_CODE_USE_GITHUB=1 and the selected model
- * is a Claude model. Handles both bare model names ("claude-sonnet-4") and the
- * standard GitHub Copilot format ("github:copilot:claude-sonnet-4").
+ * Enabled when CLAUDE_CODE_USE_GITHUB=1 and the model string contains "claude-"
+ * anywhere (handles bare names like "claude-sonnet-4" and compound formats like
+ * "github:copilot:claude-sonnet-4" or any future provider-prefixed variants).
  *
  * api.githubcopilot.com supports Anthropic native format for Claude models,
  * enabling prompt caching via cache_control blocks which significantly reduces
@@ -61,13 +61,7 @@ export function usesAnthropicAccountFlow(): boolean {
 export function isGithubNativeAnthropicMode(resolvedModel?: string): boolean {
   if (!isEnvTruthy(process.env.CLAUDE_CODE_USE_GITHUB)) return false
   const model = resolvedModel?.trim() || process.env.OPENAI_MODEL?.trim() || ''
-  const normalized = model.toLowerCase()
-  // Match bare model names ("claude-sonnet-4") and the standard GitHub Copilot
-  // compound format ("github:copilot:claude-sonnet-4").
-  return (
-    normalized.startsWith('claude-') ||
-    normalized.startsWith('github:copilot:claude-')
-  )
+  return model.toLowerCase().includes('claude-')
 }
 function isCodexModel(): boolean {
   return shouldUseCodexTransport(
