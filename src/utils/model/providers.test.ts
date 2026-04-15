@@ -7,7 +7,6 @@ const originalEnv = {
   CLAUDE_CODE_USE_BEDROCK: process.env.CLAUDE_CODE_USE_BEDROCK,
   CLAUDE_CODE_USE_VERTEX: process.env.CLAUDE_CODE_USE_VERTEX,
   CLAUDE_CODE_USE_FOUNDRY: process.env.CLAUDE_CODE_USE_FOUNDRY,
-  CLAUDE_CODE_GITHUB_ANTHROPIC_API: process.env.CLAUDE_CODE_GITHUB_ANTHROPIC_API,
   OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
   OPENAI_API_BASE: process.env.OPENAI_API_BASE,
   OPENAI_MODEL: process.env.OPENAI_MODEL,
@@ -20,7 +19,6 @@ afterEach(() => {
   process.env.CLAUDE_CODE_USE_BEDROCK = originalEnv.CLAUDE_CODE_USE_BEDROCK
   process.env.CLAUDE_CODE_USE_VERTEX = originalEnv.CLAUDE_CODE_USE_VERTEX
   process.env.CLAUDE_CODE_USE_FOUNDRY = originalEnv.CLAUDE_CODE_USE_FOUNDRY
-  process.env.CLAUDE_CODE_GITHUB_ANTHROPIC_API = originalEnv.CLAUDE_CODE_GITHUB_ANTHROPIC_API
   process.env.OPENAI_BASE_URL = originalEnv.OPENAI_BASE_URL
   process.env.OPENAI_API_BASE = originalEnv.OPENAI_API_BASE
   process.env.OPENAI_MODEL = originalEnv.OPENAI_MODEL
@@ -37,7 +35,6 @@ function clearProviderEnv(): void {
   delete process.env.CLAUDE_CODE_USE_BEDROCK
   delete process.env.CLAUDE_CODE_USE_VERTEX
   delete process.env.CLAUDE_CODE_USE_FOUNDRY
-  delete process.env.CLAUDE_CODE_GITHUB_ANTHROPIC_API
   delete process.env.OPENAI_BASE_URL
   delete process.env.OPENAI_API_BASE
   delete process.env.OPENAI_MODEL
@@ -120,7 +117,7 @@ test('isGithubNativeAnthropicMode: false when CLAUDE_CODE_USE_GITHUB is not set'
   expect(isGithubNativeAnthropicMode()).toBe(false)
 })
 
-test('isGithubNativeAnthropicMode: true for claude- model via OPENAI_MODEL', async () => {
+test('isGithubNativeAnthropicMode: true for bare claude- model via OPENAI_MODEL', async () => {
   clearProviderEnv()
   process.env.CLAUDE_CODE_USE_GITHUB = '1'
   process.env.OPENAI_MODEL = 'claude-sonnet-4-5'
@@ -128,12 +125,28 @@ test('isGithubNativeAnthropicMode: true for claude- model via OPENAI_MODEL', asy
   expect(isGithubNativeAnthropicMode()).toBe(true)
 })
 
-test('isGithubNativeAnthropicMode: true when resolvedModel overrides non-claude OPENAI_MODEL', async () => {
+test('isGithubNativeAnthropicMode: true for github:copilot:claude- compound format', async () => {
+  clearProviderEnv()
+  process.env.CLAUDE_CODE_USE_GITHUB = '1'
+  process.env.OPENAI_MODEL = 'github:copilot:claude-sonnet-4'
+  const { isGithubNativeAnthropicMode } = await importFreshProvidersModule()
+  expect(isGithubNativeAnthropicMode()).toBe(true)
+})
+
+test('isGithubNativeAnthropicMode: true when resolvedModel is a claude- model', async () => {
   clearProviderEnv()
   process.env.CLAUDE_CODE_USE_GITHUB = '1'
   process.env.OPENAI_MODEL = 'github:copilot'
   const { isGithubNativeAnthropicMode } = await importFreshProvidersModule()
   expect(isGithubNativeAnthropicMode('claude-haiku-4-5')).toBe(true)
+})
+
+test('isGithubNativeAnthropicMode: false for generic github:copilot alias', async () => {
+  clearProviderEnv()
+  process.env.CLAUDE_CODE_USE_GITHUB = '1'
+  process.env.OPENAI_MODEL = 'github:copilot'
+  const { isGithubNativeAnthropicMode } = await importFreshProvidersModule()
+  expect(isGithubNativeAnthropicMode()).toBe(false)
 })
 
 test('isGithubNativeAnthropicMode: false for non-Claude model', async () => {
@@ -144,28 +157,10 @@ test('isGithubNativeAnthropicMode: false for non-Claude model', async () => {
   expect(isGithubNativeAnthropicMode()).toBe(false)
 })
 
-test('isGithubNativeAnthropicMode: force flag returns false for non-Claude model', async () => {
+test('isGithubNativeAnthropicMode: false for github:copilot:gpt- model', async () => {
   clearProviderEnv()
   process.env.CLAUDE_CODE_USE_GITHUB = '1'
-  process.env.CLAUDE_CODE_GITHUB_ANTHROPIC_API = '1'
-  process.env.OPENAI_MODEL = 'gpt-4o'
+  process.env.OPENAI_MODEL = 'github:copilot:gpt-4o'
   const { isGithubNativeAnthropicMode } = await importFreshProvidersModule()
   expect(isGithubNativeAnthropicMode()).toBe(false)
-})
-
-test('isGithubNativeAnthropicMode: force flag returns true for claude- model', async () => {
-  clearProviderEnv()
-  process.env.CLAUDE_CODE_USE_GITHUB = '1'
-  process.env.CLAUDE_CODE_GITHUB_ANTHROPIC_API = '1'
-  process.env.OPENAI_MODEL = 'claude-sonnet-4-5'
-  const { isGithubNativeAnthropicMode } = await importFreshProvidersModule()
-  expect(isGithubNativeAnthropicMode()).toBe(true)
-})
-
-test('isGithubNativeAnthropicMode: force flag with no model returns true', async () => {
-  clearProviderEnv()
-  process.env.CLAUDE_CODE_USE_GITHUB = '1'
-  process.env.CLAUDE_CODE_GITHUB_ANTHROPIC_API = '1'
-  const { isGithubNativeAnthropicMode } = await importFreshProvidersModule()
-  expect(isGithubNativeAnthropicMode()).toBe(true)
 })
