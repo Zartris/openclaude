@@ -52,7 +52,8 @@ export function usesAnthropicAccountFlow(): boolean {
  *
  * Enabled automatically when CLAUDE_CODE_USE_GITHUB=1 and the selected model
  * is a Claude model (OPENAI_MODEL starts with "claude-"). Can also be forced
- * on with CLAUDE_CODE_GITHUB_ANTHROPIC_API=1 for any model.
+ * on with CLAUDE_CODE_GITHUB_ANTHROPIC_API=1 for Claude models that use an
+ * alias (e.g. "github:copilot") that would not be detected automatically.
  *
  * api.githubcopilot.com supports Anthropic native format for Claude models,
  * enabling prompt caching via cache_control blocks which significantly reduces
@@ -60,12 +61,18 @@ export function usesAnthropicAccountFlow(): boolean {
  */
 export function isGithubNativeAnthropicMode(resolvedModel?: string): boolean {
   if (!isEnvTruthy(process.env.CLAUDE_CODE_USE_GITHUB)) return false
-  if (isEnvTruthy(process.env.CLAUDE_CODE_GITHUB_ANTHROPIC_API)) return true
-  // Auto-enable for Claude models — they support native format + caching.
   // Prefer the resolved model name (e.g. "claude-haiku-4.5") over OPENAI_MODEL
   // which may be a generic alias like "github:copilot".
   const model = resolvedModel?.trim() || process.env.OPENAI_MODEL?.trim() || ''
-  return model.toLowerCase().startsWith('claude-')
+  const isClaudeModel = model.toLowerCase().startsWith('claude-')
+  // Force flag: opt in explicitly when using a Claude model under a non-standard
+  // alias (e.g. OPENAI_MODEL=github:copilot). This flag is only intended for
+  // endpoints known to serve a Claude model; native Anthropic format is only
+  // validated for Claude models on Copilot.
+  if (isEnvTruthy(process.env.CLAUDE_CODE_GITHUB_ANTHROPIC_API)) {
+    return isClaudeModel || !model
+  }
+  return isClaudeModel
 }
 function isCodexModel(): boolean {
   return shouldUseCodexTransport(
